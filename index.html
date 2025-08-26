@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>门店可达圈问题分析</title>
+    <!-- 请替换YOUR_AMAP_KEY为你的高德地图API密钥 -->
+    <script type="text/javascript" src="https://webapi.amap.com/maps?v=1.4.15&key=05274d5027e6b22978b2ade4630f3596"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .container {
+            display: flex;
+            height: 100vh;
+            background: white;
+        }
+        
+        .sidebar {
+            width: 350px;
+            background: #fff;
+            border-right: 2px solid #e9ecef;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+        
+        .map-container {
+            flex: 1;
+            position: relative;
+        }
+        
+        .header {
+            text-align: center;
+            padding: 20px;
+            margin-bottom: 0;
+            color: #333;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e9ecef;
+        }
+        
+        .header h2 {
+            margin: 0;
+            font-size: 18px;
+        }
+        
+        .sidebar-content {
+            padding: 20px;
+            flex: 1;
+        }
+        
+        .controls {
+            margin-bottom: 20px;
+        }
+        
+        .control-group {
+            margin-bottom: 15px;
+        }
+        
+        .control-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #333;
+            font-size: 14px;
+        }
+        
+        select, input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        
+        button {
+            width: 100%;
+            padding: 12px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+        
+        button:hover {
+            background: #0056b3;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .button-group button {
+            flex: 1;
+            margin-bottom: 0;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+        
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        
+        .info-panel {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border: 1px solid #e9ecef;
+        }
+        
+        .info-panel h4 {
+            margin-top: 0;
+            margin-bottom: 15px;
+            color: #495057;
+        }
+        
+        .info-item {
+            margin: 8px 0;
+            font-size: 13px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .info-item strong {
+            color: #495057;
+        }
+        
+        .problem-type {
+            padding: 4px 8px;
+            border-radius: 3px;
+            color: white;
+            font-size: 12px;
+        }
+        
+        .type-1 { background-color: #dc3545; }
+        .type-2 { background-color: #fd7e14; }
+        .type-3 { background-color: #ffc107; }
+        .type-4 { background-color: #28a745; }
+        .type-other { background-color: #6c757d; }
+        
+        #mapContainer {
+            width: 100%;
+            height: 100vh;
+        }
+        
+        .legend {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: white;
+            padding: 15px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            z-index: 1000;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin: 5px 0;
+            font-size: 12px;
+        }
+        
+        .legend-color {
+            width: 20px;
+            height: 15px;
+            margin-right: 8px;
+            border-radius: 3px;
+        }
+        
+        .stats {
+            margin-bottom: 20px;
+        }
+        
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 15px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            margin-bottom: 8px;
+            border-left: 4px solid #007bff;
+        }
+        
+        .stat-label {
+            font-size: 13px;
+            color: #495057;
+            font-weight: 500;
+        }
+        
+        .stat-number {
+            font-size: 18px;
+            font-weight: bold;
+            color: #007bff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 左侧边栏 -->
+        <div class="sidebar">
+            <div class="header">
+                <h2>门店可达圈问题分析</h2>
+            </div>
+            
+            <div class="sidebar-content">
+                <div class="loading" id="loadingPanel">
+                    正在加载数据...
+                </div>
+                
+                <div class="error" id="errorPanel" style="display: none;">
+                    <strong>错误：</strong><span id="errorMessage"></span>
+                </div>
+                
+                <div id="mainContent" style="display: none;">
+                    <div class="stats" id="statsPanel">
+                        <div class="stat-item">
+                            <div class="stat-label">总门店数</div>
+                            <div class="stat-number" id="totalCount">0</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">门店不在可达圈内</div>
+                            <div class="stat-number" id="type1Count">0</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">门店在可达圈边界</div>
+                            <div class="stat-number" id="type2Count">0</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">可达圈过大</div>
+                            <div class="stat-number" id="type3Count">0</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">可达圈不准</div>
+                            <div class="stat-number" id="type4Count">0</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">其他问题</div>
+                            <div class="stat-number" id="otherCount">0</div>
+                        </div>
+                    </div>
+                    
+                    <div class="controls">
+                        <div class="control-group">
+                            <label>问题类别筛选</label>
+                            <select id="problemTypeFilter">
+                                <option value="">全部类别</option>
+                                <option value="门店不在可达圈内">门店不在可达圈内</option>
+                                <option value="门店在可达圈边界">门店在可达圈边界</option>
+                                <option value="可达圈过大">可达圈过大</option>
+                                <option value="可达圈不准">可达圈不准</option>
+                                <option value="其他">其他</option>
+                            </select>
+                        </div>
+                        
+                        <div class="control-group">
+                            <label>选择门店</label>
+                            <select id="shopSelector">
+                                <option value="">请选择门店</option>
+                            </select>
+                        </div>
+                        
+                        <div class="button-group">
+                            <button onclick="showShop()">显示门店</button>
+                            <button onclick="clearMap()">清除地图</button>
+                        </div>
+                    </div>
+                    
+                    <div class="info-panel" id="infoPanel" style="display: none;">
+                        <h4>门店详情</h4>
+                        <div class="info-item">
+                            <strong>门店ID:</strong>
+                            <span id="currentShopId"></span>
+                        </div>
+                        <div class="info-item">
+                            <strong>问题类别:</strong>
+                            <span id="currentProblemType"></span>
+                        </div>
+                        <div class="info-item">
+                            <strong>召回率:</strong>
+                            <span id="recall">0</span>%
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 右侧地图 -->
+        <div class="map-container">
+            <div id="mapContainer"></div>
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #ff4d4f;"></div>
+                    <span>真实配送区域</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #1890ff;"></div>
+                    <span>预测可达圈</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: none; border: 3px solid #9c27b0;"></div>
+                    <span>可达圈边界</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #FF0000; border-radius: 50%; border: 2px solid #FFFFFF;"></div>
+                    <span>门店位置</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let map;
+        let shopData = [];
+        let filteredData = [];
+        let currentPolygons = [];
+        let currentMarker = null;
+        
+        // 初始化地图
+        function initMap() {
+            map = new AMap.Map('mapContainer', {
+                zoom: 12,
+                center: [116.397428, 39.90923], // 北京中心
+                mapStyle: 'amap://styles/normal'
+            });
+        }
+        
+        // 从JSON文件加载数据
+        async function loadDataFromJSON() {
+            try {
+                const response = await fetch('problem_shop_data.json');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                shopData = data;
+                
+                document.getElementById('loadingPanel').style.display = 'none';
+                document.getElementById('mainContent').style.display = 'block';
+                
+                updateStats();
+                filterShops();
+                
+                console.log(`成功加载 ${shopData.length} 个门店数据`);
+            } catch (error) {
+                console.error('加载数据失败:', error);
+                document.getElementById('loadingPanel').style.display = 'none';
+                document.getElementById('errorPanel').style.display = 'block';
+                document.getElementById('errorMessage').textContent = `无法加载数据文件 problem_shop_data.json: ${error.message}`;
+            }
+        }
+        
+        // 分类问题类型
+        function classifyProblemType(problemType) {
+            if (problemType && problemType.includes('门店不在可达圈内')) {
+                return '门店不在可达圈内';
+            } else if (problemType && problemType.includes('门店在可达圈边界')) {
+                return '门店在可达圈边界';
+            } else if (problemType && problemType.includes('可达圈过大')) {
+                return '可达圈过大';
+            } else if (problemType && (problemType.includes('可达圈不准') || problemType.includes('其他不准'))) {
+                return '可达圈不准';
+            } else {
+                return '其他';
+            }
+        }
+        
+        // 获取问题类型样式类
+        function getProblemTypeClass(problemType) {
+            switch(problemType) {
+                case '门店不在可达圈内': return 'type-1';
+                case '门店在可达圈边界': return 'type-2';
+                case '可达圈过大': return 'type-3';
+                case '可达圈不准': return 'type-4';
+                default: return 'type-other';
+            }
+        }
+        
+        // 更新统计信息
+        function updateStats() {
+            const total = shopData.length;
+            const type1 = shopData.filter(shop => classifyProblemType(shop.problem_type) === '门店不在可达圈内').length;
+            const type2 = shopData.filter(shop => classifyProblemType(shop.problem_type) === '门店在可达圈边界').length;
+            const type3 = shopData.filter(shop => classifyProblemType(shop.problem_type) === '可达圈过大').length;
+            const type4 = shopData.filter(shop => classifyProblemType(shop.problem_type) === '可达圈不准').length;
+            const other = total - type1 - type2 - type3 - type4;
+            
+            document.getElementById('totalCount').textContent = total;
+            document.getElementById('type1Count').textContent = type1;
+            document.getElementById('type2Count').textContent = type2;
+            document.getElementById('type3Count').textContent = type3;
+            document.getElementById('type4Count').textContent = type4;
+            document.getElementById('otherCount').textContent = other;
+        }
+        
+        // 过滤门店数据
+        function filterShops() {
+            const problemTypeFilter = document.getElementById('problemTypeFilter').value;
+            
+            filteredData = shopData.filter(shop => {
+                const problemTypeMatch = !problemTypeFilter || classifyProblemType(shop.problem_type) === problemTypeFilter;
+                return problemTypeMatch;
+            });
+            
+            updateShopSelector();
+        }
+        
+        // 更新门店选择器
+        function updateShopSelector() {
+            const selector = document.getElementById('shopSelector');
+            selector.innerHTML = '<option value="">请选择门店</option>';
+            
+            filteredData.forEach((shop, index) => {
+                const option = document.createElement('option');
+                option.value = index;
+                const problemType = classifyProblemType(shop.problem_type);
+                option.textContent = `${shop.shop_id} - ${problemType}`;
+                selector.appendChild(option);
+            });
+        }
+        
+        // 显示门店
+        function showShop() {
+            const selectedIndex = document.getElementById('shopSelector').value;
+            if (selectedIndex === '') {
+                alert('请先选择一个门店');
+                return;
+            }
+            
+            const shop = filteredData[selectedIndex];
+            clearMap();
+            
+            // 显示门店信息
+            document.getElementById('infoPanel').style.display = 'block';
+            document.getElementById('currentShopId').textContent = shop.shop_id;
+            
+            const problemType = classifyProblemType(shop.problem_type);
+            const problemTypeSpan = document.getElementById('currentProblemType');
+            problemTypeSpan.innerHTML = `<span class="problem-type ${getProblemTypeClass(problemType)}">${problemType}</span>`;
+            
+            // 解析坐标
+            const lon = parseFloat(shop.lon_02);
+            const lat = parseFloat(shop.lat_02);
+            
+            if (lon === 0 && lat === 0) {
+                alert('该门店没有有效的坐标信息');
+                return;
+            }
+            
+            // 添加门店标记 - 简单的圆点
+            currentMarker = new AMap.CircleMarker({
+                center: [lon, lat],
+                radius: 8, // 圆点半径
+                strokeColor: '#FFFFFF',
+                strokeWeight: 2,
+                strokeOpacity: 1,
+                fillColor: '#FF0000',
+                fillOpacity: 1,
+                zIndex: 1000,
+                cursor: 'pointer'
+            });
+            currentMarker.setExtData({title: `门店: ${shop.shop_id}`});
+            map.add(currentMarker);
+            
+            // 显示真实配送区域
+            if (shop.real_list_draw && shop.real_list_draw.length > 0) {
+                shop.real_list_draw.forEach(polygon => {
+                    if (polygon && polygon.length > 0) {
+                        const realPolygon = new AMap.Polygon({
+                            path: polygon.map(coord => [coord[0], coord[1]]),
+                            strokeColor: '#ff4d4f',
+                            strokeWeight: 2,
+                            fillColor: '#ff4d4f',
+                            fillOpacity: 0.3
+                        });
+                        map.add(realPolygon);
+                        currentPolygons.push(realPolygon);
+                    }
+                });
+            }
+            
+            // 显示预测可达圈
+            if (shop.pre_list_draw && shop.pre_list_draw.length > 0) {
+                shop.pre_list_draw.forEach(polygon => {
+                    if (polygon && polygon.length > 0) {
+                        const prePolygon = new AMap.Polygon({
+                            path: polygon.map(coord => [coord[0], coord[1]]),
+                            strokeColor: '#1890ff',
+                            strokeWeight: 2,
+                            fillColor: '#1890ff',
+                            fillOpacity: 0.2
+                        });
+                        map.add(prePolygon);
+                        currentPolygons.push(prePolygon);
+                    }
+                });
+            }
+            
+            // 显示可达圈边界
+            if (shop.real_reachable_boundary && Array.isArray(shop.real_reachable_boundary) && shop.real_reachable_boundary.length > 0) {
+                console.log('边界数据:', shop.real_reachable_boundary); // 调试信息
+                console.log('边界数据类型:', typeof shop.real_reachable_boundary);
+                console.log('边界数据长度:', shop.real_reachable_boundary.length);
+                console.log('第一个点:', shop.real_reachable_boundary[0]);
+                
+                try {
+                    // 检查数据格式
+                    if (Array.isArray(shop.real_reachable_boundary[0])) {
+                        // 二维数组格式: [[经度, 纬度], [经度, 纬度], ...]
+                        const boundaryPath = shop.real_reachable_boundary.map(coord => [coord[0], coord[1]]);
+                        
+                        // 确保路径闭合
+                        if (boundaryPath.length > 0 && 
+                            (boundaryPath[0][0] !== boundaryPath[boundaryPath.length - 1][0] || 
+                             boundaryPath[0][1] !== boundaryPath[boundaryPath.length - 1][1])) {
+                            boundaryPath.push(boundaryPath[0]);
+                        }
+                        
+                        console.log('处理后的边界路径:', boundaryPath.slice(0, 3)); // 显示前3个点
+                        
+                        const boundaryPolygon = new AMap.Polygon({
+                            path: boundaryPath,
+                            strokeColor: '#9c27b0',
+                            strokeWeight: 3,
+                            strokeStyle: 'solid',
+                            fillColor: 'transparent',
+                            fillOpacity: 0,
+                            zIndex: 900
+                        });
+                        map.add(boundaryPolygon);
+                        currentPolygons.push(boundaryPolygon);
+                        console.log('边界多边形已添加到地图，路径点数:', boundaryPath.length);
+                    } else {
+                        console.log('边界数据格式不是二维数组');
+                    }
+                } catch (error) {
+                    console.error('绘制边界时出错:', error);
+                    console.error('边界数据:', shop.real_reachable_boundary);
+                }
+            } else {
+                console.log('没有边界数据或边界数据为空');
+                console.log('边界数据值:', shop.real_reachable_boundary);
+            }
+            
+            // 使用JSON中的召回率信息
+            document.getElementById('recall').textContent = ((shop.recall || 0) * 100).toFixed(1);
+            
+            // 调整地图视野
+            if (currentPolygons.length > 0) {
+                map.setFitView([currentMarker, ...currentPolygons]);
+            } else {
+                map.setCenter([lon, lat]);
+                map.setZoom(15);
+            }
+        }
+        
+        // 清除地图
+        function clearMap() {
+            // 清除多边形
+            currentPolygons.forEach(polygon => {
+                map.remove(polygon);
+            });
+            currentPolygons = [];
+            
+            // 清除标记
+            if (currentMarker) {
+                map.remove(currentMarker);
+                currentMarker = null;
+            }
+            
+            // 隐藏信息面板
+            document.getElementById('infoPanel').style.display = 'none';
+        }
+        
+        // 事件监听
+        document.getElementById('problemTypeFilter').addEventListener('change', filterShops);
+        
+        // 页面初始化
+        window.onload = function() {
+            initMap();
+            loadDataFromJSON();
+        };
+    </script>
+</body>
+</html>
